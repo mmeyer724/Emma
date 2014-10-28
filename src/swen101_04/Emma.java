@@ -14,25 +14,21 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Emma extends AdvancedRobot {
 
     private final double INSIDE_BOX_PERCENT = 0.85;
+    private final EmmaEscape escapePoint = new EmmaEscape(null, false);
+    private final ConcurrentHashMap<String, Point2D.Double> aroundMe = new ConcurrentHashMap<String, Point2D.Double>();
+    private final ConcurrentHashMap<String, Rectangle2D.Double> aroundMeCollisions = new ConcurrentHashMap<String, Rectangle2D.Double>();
     private Rectangle2D insideBox;
-
     private Point2D.Double ourPoint;
     private double ourHeading;
     private double ourGunHeading;
     private double ourRadarHeading;
-
     private Point2D.Double enemyPoint;
     private double oldEnemyHeading;
     private String enemyName = "";
     private int amountHit = 0;
     private int missedBullets = 0;
-
     private ArrayList<Point2D.Double> sections;
     private EmmaThread bestSectionThread;
-    private final EmmaEscape escapePoint = new EmmaEscape(null, false);
-    private final ConcurrentHashMap<String, Point2D.Double> aroundMe = new ConcurrentHashMap<String, Point2D.Double>();
-    private final ConcurrentHashMap<String, Rectangle2D.Double> aroundMeCollisions = new ConcurrentHashMap<String, Rectangle2D.Double>();
-
 
     @Override
     public void run() {
@@ -48,8 +44,8 @@ public class Emma extends AdvancedRobot {
         double boxX = this.insideBox.getX();
         double boxY = this.insideBox.getY();
 
-        for(double x = (sectWidth/2); x <= this.insideBox.getWidth(); x += sectWidth) {
-            for(double y = (sectHeight/2); y <= this.insideBox.getHeight(); y += sectHeight) {
+        for (double x = (sectWidth / 2); x <= this.insideBox.getWidth(); x += sectWidth) {
+            for (double y = (sectHeight / 2); y <= this.insideBox.getHeight(); y += sectHeight) {
                 this.sections.add(new Point2D.Double(x + boxX, y + boxY));
             }
         }
@@ -65,13 +61,13 @@ public class Emma extends AdvancedRobot {
         boolean justStarted = true;
 
         while (true) {
-            if(justStarted) {
+            if (justStarted) {
                 justStarted = false;
                 this.turnRadarRight(360);
                 this.escape();
             }
 
-            if(!this.isLockedOn()) {
+            if (!this.isLockedOn()) {
                 this.lockOnToNearest();
             }
 
@@ -82,14 +78,14 @@ public class Emma extends AdvancedRobot {
     }
 
     private boolean shouldMove() {
-        if(this.getEnergy() < 50) {
-            if(this.amountHit >= 1) {
+        if (this.getEnergy() < 50) {
+            if (this.amountHit >= 1) {
                 return true;
             } else {
                 return false;
             }
         } else {
-            if(this.amountHit >= 3) {
+            if (this.amountHit >= 3) {
                 return true;
             } else {
                 return false;
@@ -104,7 +100,7 @@ public class Emma extends AdvancedRobot {
         Point2D.Double botPoint = this.getPointByBearingDistance(bearing, distance);
         this.aroundMe.put(event.getName(), botPoint);
 
-        if(this.isTrackedEnemy(event.getName())) {
+        if (this.isTrackedEnemy(event.getName())) {
             //Variables for circular targeting
             double bulletPower = Math.min(6.0, getEnergy());
             double myX = getX();
@@ -145,7 +141,7 @@ public class Emma extends AdvancedRobot {
             this.setFire(bulletPower);
             this.setFire(bulletPower);
 
-            if(!this.shouldMove()) {
+            if (!this.shouldMove()) {
                 this.facePoint(botPoint, EmmaPart.RADAR);
                 this.scan();
             } else {
@@ -179,7 +175,7 @@ public class Emma extends AdvancedRobot {
     @Override
     public void onBulletMissed(BulletMissedEvent event) {
         this.missedBullets++;
-        if(this.missedBullets > 2) {
+        if (this.missedBullets > 2) {
             this.missedBullets = 0;
             this.lockOffEnemy();
             this.lockOnToNearest();
@@ -189,7 +185,7 @@ public class Emma extends AdvancedRobot {
     @Override
     public void onHitByBullet(HitByBulletEvent event) {
         this.amountHit++;
-        if(this.shouldMove()) {
+        if (this.shouldMove()) {
             this.escape();
         }
         this.lockOnToNearest();
@@ -216,20 +212,20 @@ public class Emma extends AdvancedRobot {
         g.drawRect((int) insideBox.getX(), (int) insideBox.getY(), (int) insideBox.getWidth(), (int) insideBox.getHeight());
 
         g.setColor(Color.BLUE);
-        for(Point2D.Double point : this.sections) {
-            g.drawOval((int)point.getX(), (int)point.getY(), 10, 10);
+        for (Point2D.Double point : this.sections) {
+            g.drawOval((int) point.getX(), (int) point.getY(), 10, 10);
         }
 
         Point2D.Double ePoint = this.escapePoint.getPoint();
-        if(ePoint != null) {
+        if (ePoint != null) {
             g.setColor(Color.RED);
-            g.fillOval((int)ePoint.getX(), (int)ePoint.getY(), 10, 10);
+            g.fillOval((int) ePoint.getX(), (int) ePoint.getY(), 10, 10);
             Line2D.Double eRoute = new Line2D.Double(this.ourPoint, ePoint);
             g.setColor(Color.GREEN);
-            g.drawLine((int)eRoute.getX1(), (int)eRoute.getY1(), (int)eRoute.getX2(), (int)eRoute.getY2());
+            g.drawLine((int) eRoute.getX1(), (int) eRoute.getY1(), (int) eRoute.getX2(), (int) eRoute.getY2());
         }
 
-        for(Rectangle2D.Double eRect : this.aroundMeCollisions.values()) {
+        for (Rectangle2D.Double eRect : this.aroundMeCollisions.values()) {
             g.setColor(Color.PINK);
             g.drawRect((int) eRect.getX(), (int) eRect.getY(), (int) eRect.getWidth(), (int) eRect.getHeight());
         }
@@ -248,15 +244,15 @@ public class Emma extends AdvancedRobot {
         System.out.println("Attempting lock on...");
         String target = "";
         double closestDist = -1;
-        for(Map.Entry<String, Point2D.Double> bot : this.aroundMe.entrySet()) {
+        for (Map.Entry<String, Point2D.Double> bot : this.aroundMe.entrySet()) {
             double dist = bot.getValue().distance(this.ourPoint);
-            if(closestDist < 0 || dist <= closestDist) {
+            if (closestDist < 0 || dist <= closestDist) {
                 target = bot.getKey();
                 closestDist = dist;
             }
         }
         Point2D.Double enemyPoint = this.aroundMe.get(target);
-        if(enemyPoint != null) {
+        if (enemyPoint != null) {
             this.enemyName = target;
             this.oldEnemyHeading = 0;
             this.facePoint(this.aroundMe.get(target), EmmaPart.RADAR);
@@ -264,7 +260,7 @@ public class Emma extends AdvancedRobot {
     }
 
     private void lockOffEnemy() {
-        System.out.println("Locking off "+this.enemyName);
+        System.out.println("Locking off " + this.enemyName);
         this.enemyName = "";
     }
 
@@ -288,7 +284,7 @@ public class Emma extends AdvancedRobot {
 
     private void escape() {
         Point2D.Double ePoint = this.escapePoint.getPoint();
-        if(ePoint != null) {
+        if (ePoint != null) {
             System.out.println("Escaping!");
             this.facePoint(ePoint, EmmaPart.BODY);
             this.setAhead(ePoint.distance(this.ourPoint));
@@ -368,7 +364,7 @@ public class Emma extends AdvancedRobot {
     class EmmaThread extends Thread implements Runnable {
         @Override
         public void run() {
-            while(!escapePoint.isEndThread()) {
+            while (!escapePoint.isEndThread()) {
                 double farthestDist = 0;
                 for (Point2D.Double sectPoint : sections) {
                     Line2D.Double line = new Line2D.Double(escapePoint.getOurPoint(), sectPoint);
@@ -377,10 +373,10 @@ public class Emma extends AdvancedRobot {
                         Point2D.Double loc = bot.getValue();
                         Rectangle2D.Double collision = new Rectangle2D.Double(loc.getX() - 50, loc.getY() - 50, 100, 100);
                         aroundMeCollisions.put(bot.getKey(), collision);
-                        if(line.intersects(collision)) {
+                        if (line.intersects(collision)) {
                             break;
                         }
-                        double dist =loc.distance(sectPoint);
+                        double dist = loc.distance(sectPoint);
                         if (closestDist == -1 || dist < closestDist) {
                             closestDist = dist;
                         }
