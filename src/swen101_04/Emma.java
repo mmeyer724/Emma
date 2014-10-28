@@ -294,7 +294,6 @@ public class Emma extends AdvancedRobot {
             this.setAhead(ePoint.distance(this.ourPoint));
         }
         this.amountHit = 0;
-        this.execute();
     }
 
     private Point2D.Double getPointByBearingDistance(double bearing, double distance) {
