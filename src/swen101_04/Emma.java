@@ -142,8 +142,8 @@ public class Emma extends AdvancedRobot {
             setTurnRadarRightRadians(Utils.normalRelativeAngle(absoluteBearing - getRadarHeadingRadians()));
             setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
 
-            this.setFire(3);
-            this.setFire(3);
+            this.setFire(bulletPower);
+            this.setFire(bulletPower);
 
             if(!this.shouldMove()) {
                 this.facePoint(botPoint, EmmaPart.RADAR);
@@ -258,6 +258,7 @@ public class Emma extends AdvancedRobot {
         Point2D.Double enemyPoint = this.aroundMe.get(target);
         if(enemyPoint != null) {
             this.enemyName = target;
+            this.oldEnemyHeading = 0;
             this.facePoint(this.aroundMe.get(target), EmmaPart.RADAR);
         }
     }
