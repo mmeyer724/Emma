@@ -1,120 +1,278 @@
 package swen101_04;
 
 import robocode.*;
-import robocode.Robot;
+import robocode.util.Utils;
 
 import java.awt.*;
+import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
-import java.util.Random;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class Emma extends Robot {
+public class Emma extends AdvancedRobot {
 
-    //The size of the inside box (percent of battlefield)
-    private static double INSIDE_BOX_PERCENT = 0.85;
-    //The size of the box inside the inner box (percent of inner box)
-    private static double INSIDE_INNER_BOX_PERCENT = 0.50;
-    //Rectangle representing the inner box
+    private final double INSIDE_BOX_PERCENT = 0.85;
     private Rectangle2D insideBox;
-    //Rectangle representing a box inside the inner box
-    private Rectangle2D insideInnerBox;
+
+    private Point2D.Double ourPoint;
+    private double ourHeading;
+    private double ourGunHeading;
+    private double ourRadarHeading;
+
+    private Point2D.Double enemyPoint;
+    private double oldEnemyHeading;
+    private String enemyName = "";
+    private int amountHit = 0;
+    private int missedBullets = 0;
+
+    private ArrayList<Point2D.Double> sections;
+    private EmmaThread bestSectionThread;
+    private final EmmaEscape escapePoint = new EmmaEscape(null, false);
+    private final ConcurrentHashMap<String, Point2D.Double> aroundMe = new ConcurrentHashMap<String, Point2D.Double>();
+    private final ConcurrentHashMap<String, Rectangle2D.Double> aroundMeCollisions = new ConcurrentHashMap<String, Rectangle2D.Double>();
+
 
     @Override
     public void run() {
         this.setColors(Color.black, Color.blue, Color.yellow);
 
+        this.sections = new ArrayList<Point2D.Double>();
+
         Rectangle2D battlefield = new Rectangle2D.Double(0, 0, this.getBattleFieldWidth(), this.getBattleFieldHeight());
-        insideBox = getSmallerBox(battlefield, INSIDE_BOX_PERCENT);
-        insideInnerBox = getSmallerBox(insideBox, INSIDE_INNER_BOX_PERCENT);
+        this.insideBox = getSmallerBox(battlefield, INSIDE_BOX_PERCENT);
+
+        double sectWidth = this.insideBox.getWidth() / 6;
+        final double sectHeight = this.insideBox.getHeight() / 6;
+        double boxX = this.insideBox.getX();
+        double boxY = this.insideBox.getY();
+
+        for(double x = (sectWidth/2); x <= this.insideBox.getWidth(); x += sectWidth) {
+            for(double y = (sectHeight/2); y <= this.insideBox.getHeight(); y += sectHeight) {
+                this.sections.add(new Point2D.Double(x + boxX, y + boxY));
+            }
+        }
+
+        //Make everything turn independently
+        this.setAdjustGunForRobotTurn(true);
+        this.setAdjustRadarForGunTurn(true);
+        this.setAdjustRadarForRobotTurn(true);
+
+        this.bestSectionThread = new EmmaThread();
+        this.bestSectionThread.start();
+
+        boolean justStarted = true;
 
         while (true) {
-            final double X = this.getX();
-            final double Y = this.getY();
-
-            //Detect if we are going past the inside box
-            if (!insideBox.contains(X, Y)) {
-                this.goTo(this.getRandomPointInRectangle(this.insideInnerBox));
+            if(justStarted) {
+                justStarted = false;
+                this.turnRadarRight(360);
+                this.escape();
             }
 
-            this.turnRadarRight(10);
-            this.ahead(5);
-            this.turnRight(2);
+            if(!this.isLockedOn()) {
+                this.lockOnToNearest();
+            }
+
+            this.setTurnRadarRight(360);
+
+            this.execute();
+        }
+    }
+
+    private boolean shouldMove() {
+        if(this.getEnergy() < 50) {
+            if(this.amountHit >= 1) {
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            if(this.amountHit >= 3) {
+                return true;
+            } else {
+                return false;
+            }
         }
     }
 
     @Override
     public void onScannedRobot(ScannedRobotEvent event) {
-        //Lock on to the robot
-        final double bearing = event.getBearing();
-        final double distance = event.getDistance();
-        final Point2D.Double enemyPoint = this.getPointByAngleDistance(bearing, distance);
+        double bearing = event.getBearing();
+        double distance = event.getDistance();
+        Point2D.Double botPoint = this.getPointByBearingDistance(bearing, distance);
+        this.aroundMe.put(event.getName(), botPoint);
 
-        //Only attack if the robot is inside our inside box
-        if (!this.insideBox.contains(enemyPoint)) {
-            System.out.println("Ignoring  " + event.getName() + ", too close to border (or in corner)");
-            return;
+        if(this.isTrackedEnemy(event.getName())) {
+            //Variables for circular targeting
+            double bulletPower = Math.min(6.0, getEnergy());
+            double myX = getX();
+            double myY = getY();
+            double absoluteBearing = this.getHeadingRadians() + event.getBearingRadians();
+            double enemyX = getX() + event.getDistance() * Math.sin(absoluteBearing);
+            double enemyY = getY() + event.getDistance() * Math.cos(absoluteBearing);
+            double enemyHeading = event.getHeadingRadians();
+            double enemyHeadingChange = enemyHeading - this.oldEnemyHeading;
+            double enemyVelocity = event.getVelocity();
+            this.oldEnemyHeading = enemyHeading;
+            double deltaTime = 0;
+            double battleFieldHeight = getBattleFieldHeight();
+            double battleFieldWidth = getBattleFieldWidth();
+            double predictedX = enemyX, predictedY = enemyY;
+
+            //Predict where the enemy will be next
+            while ((++deltaTime) * (20.0 - 3.0 * bulletPower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
+                predictedX += Math.sin(enemyHeading) * enemyVelocity;
+                predictedY += Math.cos(enemyHeading) * enemyVelocity;
+                enemyHeading += enemyHeadingChange;
+                if (predictedX < 18.0
+                        || predictedY < 18.0
+                        || predictedX > battleFieldWidth - 18.0
+                        || predictedY > battleFieldHeight - 18.0) {
+
+                    predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
+                    predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
+                    break;
+                }
+            }
+            double theta = Utils.normalAbsoluteAngle(Math.atan2(predictedX - getX(), predictedY - getY()));
+
+            //Turn radar and gun to the predicted location
+            setTurnRadarRightRadians(Utils.normalRelativeAngle(absoluteBearing - getRadarHeadingRadians()));
+            setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
+
+            this.setFire(3);
+            this.setFire(3);
+
+            if(!this.shouldMove()) {
+                this.facePoint(botPoint, EmmaPart.RADAR);
+                this.scan();
+            } else {
+                this.turnRadarRight(360);
+                this.escape();
+            }
         }
-
-        this.turnRadarRight(getHeading() - getRadarHeading() + bearing);
-        this.turnRight(bearing);
-
-        double enterAtAngle = 25;
-        double hypAngle = 180 - (enterAtAngle * 2);
-        double side = (Math.sin(Math.toRadians(enterAtAngle)) * distance) / Math.sin(Math.toRadians(hypAngle));
-
-        this.turnRight(enterAtAngle);
-        this.ahead(side);
-        this.turnLeft(enterAtAngle * 2);
-        this.ahead(side);
-        this.turnRight(enterAtAngle);
-
-        super.onScannedRobot(event);
     }
 
     @Override
-    public void onHitByBullet(HitByBulletEvent event) {
-        //We have been hit
-        super.onHitByBullet(event);
+    public void onRobotDeath(RobotDeathEvent event) {
+        String name = event.getName();
+        this.aroundMe.remove(name);
+        this.aroundMeCollisions.remove(name);
+        if (this.isTrackedEnemy(name)) {
+            this.lockOffEnemy();
+        }
     }
 
     @Override
     public void onHitRobot(HitRobotEvent event) {
-        //We hit another robot (two tanks collide)
-        super.onHitRobot(event);
+        this.turnRadarRight(360);
+        this.escape();
     }
 
     @Override
     public void onHitWall(HitWallEvent event) {
-        //We hit a wall
-        super.onHitWall(event);
+        this.escape();
     }
 
     @Override
-    public void onBulletHit(BulletHitEvent event) {
-        //We hit another tank with our bullet
-        super.onBulletHit(event);
+    public void onBulletMissed(BulletMissedEvent event) {
+        this.missedBullets++;
+        if(this.missedBullets > 2) {
+            this.missedBullets = 0;
+            this.lockOffEnemy();
+            this.lockOnToNearest();
+        }
+    }
+
+    @Override
+    public void onHitByBullet(HitByBulletEvent event) {
+        this.amountHit++;
+        if(this.shouldMove()) {
+            this.escape();
+        }
+        this.lockOnToNearest();
+    }
+
+    @Override
+    public void onBattleEnded(BattleEndedEvent event) {
+        this.escapePoint.setEndThread(true);
+    }
+
+    @Override
+    public void onWin(WinEvent event) {
+        this.escapePoint.setEndThread(true);
+    }
+
+    @Override
+    public void onDeath(DeathEvent event) {
+        this.escapePoint.setEndThread(true);
     }
 
     @Override
     public void onPaint(Graphics2D g) {
-        //This method allows us to debug by drawing on top of the battlefield
-        g.setColor(Color.red);
+        g.setColor(Color.green);
         g.drawRect((int) insideBox.getX(), (int) insideBox.getY(), (int) insideBox.getWidth(), (int) insideBox.getHeight());
-        g.setColor(Color.orange);
-        g.drawRect((int) insideInnerBox.getX(), (int) insideInnerBox.getY(), (int) insideInnerBox.getWidth(), (int) insideInnerBox.getHeight());
+
+        g.setColor(Color.BLUE);
+        for(Point2D.Double point : this.sections) {
+            g.drawOval((int)point.getX(), (int)point.getY(), 10, 10);
+        }
+
+        Point2D.Double ePoint = this.escapePoint.getPoint();
+        if(ePoint != null) {
+            g.setColor(Color.RED);
+            g.fillOval((int)ePoint.getX(), (int)ePoint.getY(), 10, 10);
+            Line2D.Double eRoute = new Line2D.Double(this.ourPoint, ePoint);
+            g.setColor(Color.GREEN);
+            g.drawLine((int)eRoute.getX1(), (int)eRoute.getY1(), (int)eRoute.getX2(), (int)eRoute.getY2());
+        }
+
+        for(Rectangle2D.Double eRect : this.aroundMeCollisions.values()) {
+            g.setColor(Color.PINK);
+            g.drawRect((int) eRect.getX(), (int) eRect.getY(), (int) eRect.getWidth(), (int) eRect.getHeight());
+        }
     }
 
-    private Point2D.Double getPointByAngleDistance(double angle, double distance) {
-        double pointX = this.getX() + distance * Math.cos(angle);
-        double pointY = this.getY() + distance * Math.sin(angle);
-        return new Point2D.Double(pointX, pointY);
+    @Override
+    public void onStatus(StatusEvent e) {
+        RobotStatus status = e.getStatus();
+        this.ourPoint = new Point2D.Double(status.getX(), status.getY());
+        this.ourHeading = status.getHeading();
+        this.ourGunHeading = status.getGunHeading();
+        this.ourRadarHeading = status.getRadarHeading();
     }
 
-    private Point2D.Double getRandomPointInRectangle(Rectangle2D rect) {
-        Random rand = new Random();
-        double x = rect.getX() + rand.nextInt((int) rect.getWidth());
-        double y = rect.getY() + rand.nextInt((int) rect.getHeight());
-        return new Point2D.Double(x, y);
+    private void lockOnToNearest() {
+        System.out.println("Attempting lock on...");
+        String target = "";
+        double closestDist = -1;
+        for(Map.Entry<String, Point2D.Double> bot : this.aroundMe.entrySet()) {
+            double dist = bot.getValue().distance(this.ourPoint);
+            if(closestDist < 0 || dist <= closestDist) {
+                target = bot.getKey();
+                closestDist = dist;
+            }
+        }
+        Point2D.Double enemyPoint = this.aroundMe.get(target);
+        if(enemyPoint != null) {
+            this.enemyName = target;
+            this.facePoint(this.aroundMe.get(target), EmmaPart.RADAR);
+        }
+    }
+
+    private void lockOffEnemy() {
+        System.out.println("Locking off "+this.enemyName);
+        this.enemyName = "";
+    }
+
+    private boolean isTrackedEnemy(String name) {
+        return this.enemyName == name;
+    }
+
+    private boolean isLockedOn() {
+        return !this.enemyName.isEmpty();
     }
 
     private Rectangle2D getSmallerBox(Rectangle2D big, double percent) {
@@ -127,41 +285,112 @@ public class Emma extends Robot {
         return new Rectangle2D.Double(startX, startY, insideWidth, insideHeight);
     }
 
-    private void facePoint(Point2D point) {
-        Point2D.Double location = new Point2D.Double(this.getX(), this.getY());
-        double angle = normalRelativeAngle(absoluteBearing(location, point) - getHeading());
-        this.turnRight(angle);
-    }
-
-    private void goTo(Point2D point) {
-        Point2D.Double location = new Point2D.Double(this.getX(), this.getY());
-        double distance = location.distance(point);
-        double angle = normalRelativeAngle(absoluteBearing(location, point) - getHeading());
-        // we can make the robot go backwards instead of rotating all the way in certain cases
-        if (Math.abs(angle) > 90.0) {
-            distance *= -1.0;
-            if (angle > 0.0) {
-                angle -= 180.0;
-            } else {
-                angle += 180.0;
-            }
+    private void escape() {
+        Point2D.Double ePoint = this.escapePoint.getPoint();
+        if(ePoint != null) {
+            System.out.println("Escaping!");
+            this.facePoint(ePoint, EmmaPart.BODY);
+            this.setAhead(ePoint.distance(this.ourPoint));
         }
-        this.turnRight(angle);
-        this.ahead(distance);
+        this.amountHit = 0;
+        this.execute();
     }
 
-    private double absoluteBearing(Point2D source, Point2D target) {
-        return Math.toDegrees(Math.atan2(target.getX() - source.getX(), target.getY() - source.getY()));
+    private Point2D.Double getPointByBearingDistance(double bearing, double distance) {
+        double absBearing = Math.toRadians(bearing + this.ourHeading);
+        double enx = Math.sin(absBearing) * distance;
+        double eny = Math.cos(absBearing) * distance;
+        double enemyX = this.ourPoint.getX() + enx;
+        double enemyY = this.ourPoint.getY() + eny;
+        return new Point2D.Double(enemyX, enemyY);
     }
 
-    private double normalRelativeAngle(double angle) {
-        double relativeAngle = angle % 360;
-        if (relativeAngle <= -180) {
-            return 180 + (relativeAngle % 180);
-        } else if (relativeAngle > 180) {
-            return -180 + (relativeAngle % 180);
-        } else {
-            return relativeAngle;
+    private void facePoint(Point2D.Double point, EmmaPart part) {
+        double angle = this.getAbsoluteBearingTo(point);
+        switch (part) {
+            case BODY:
+                angle -= this.ourHeading;
+                this.setTurnRight(Utils.normalRelativeAngleDegrees(angle));
+                break;
+            case GUN:
+                angle -= this.ourGunHeading;
+                this.setTurnGunRight(Utils.normalRelativeAngleDegrees(angle));
+                break;
+            case RADAR:
+                angle -= this.ourRadarHeading;
+                this.setTurnRadarRight(Utils.normalRelativeAngleDegrees(angle));
+                break;
+        }
+    }
+
+    private double getAbsoluteBearingTo(Point2D.Double point) {
+        double xDiff = point.getX() - this.ourPoint.getX();
+        double yDiff = point.getY() - this.ourPoint.getY();
+        return Utils.normalAbsoluteAngleDegrees((Math.toDegrees(Math.atan2(yDiff, xDiff)) * -1) + 90);
+    }
+
+    enum EmmaPart {
+        BODY,
+        GUN,
+        RADAR;
+    }
+
+    class EmmaEscape {
+        private Point2D.Double point;
+        private boolean endThread;
+
+        EmmaEscape(Point2D.Double point, boolean endThread) {
+            this.point = point;
+            this.endThread = endThread;
+        }
+
+        public Point2D.Double getPoint() {
+            return point;
+        }
+
+        public void setPoint(Point2D.Double point) {
+            this.point = point;
+        }
+
+        public boolean isEndThread() {
+            return endThread;
+        }
+
+        public void setEndThread(boolean endThread) {
+            this.endThread = endThread;
+        }
+
+        public Point2D.Double getOurPoint() {
+            return ourPoint;
+        }
+    }
+
+    class EmmaThread extends Thread implements Runnable {
+        @Override
+        public void run() {
+            while(!escapePoint.isEndThread()) {
+                double farthestDist = 0;
+                for (Point2D.Double sectPoint : sections) {
+                    Line2D.Double line = new Line2D.Double(escapePoint.getOurPoint(), sectPoint);
+                    double closestDist = -1;
+                    for (Map.Entry<String, Point2D.Double> bot : aroundMe.entrySet()) {
+                        Point2D.Double loc = bot.getValue();
+                        Rectangle2D.Double collision = new Rectangle2D.Double(loc.getX() - 50, loc.getY() - 50, 100, 100);
+                        aroundMeCollisions.put(bot.getKey(), collision);
+                        if(line.intersects(collision)) {
+                            break;
+                        }
+                        double dist =loc.distance(sectPoint);
+                        if (closestDist == -1 || dist < closestDist) {
+                            closestDist = dist;
+                        }
+                    }
+                    if (farthestDist < closestDist) {
+                        farthestDist = closestDist;
+                        escapePoint.setPoint(sectPoint);
+                    }
+                }
+            }
         }
     }
 }
