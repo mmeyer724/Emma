@@ -11,6 +11,12 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Class for the Robocode robot Emma for SWEN-101.04.
+ *
+ * Author: Michael Meyer (mcm1792@rit.edu)
+ * Author: Wade Mauger (wam9729@rit.edu)
+ */
 public class Emma extends AdvancedRobot {
 
     private final double INSIDE_BOX_PERCENT = 0.85;
@@ -22,7 +28,6 @@ public class Emma extends AdvancedRobot {
     private double ourHeading;
     private double ourGunHeading;
     private double ourRadarHeading;
-    private Point2D.Double enemyPoint;
     private double oldEnemyHeading;
     private String enemyName = "";
     private int amountHit = 0;
@@ -36,14 +41,15 @@ public class Emma extends AdvancedRobot {
 
         this.sections = new ArrayList<Point2D.Double>();
 
+        //Calculations for insideBox
         Rectangle2D battlefield = new Rectangle2D.Double(0, 0, this.getBattleFieldWidth(), this.getBattleFieldHeight());
         this.insideBox = getSmallerBox(battlefield, INSIDE_BOX_PERCENT);
-
         double sectWidth = this.insideBox.getWidth() / 6;
         final double sectHeight = this.insideBox.getHeight() / 6;
         double boxX = this.insideBox.getX();
         double boxY = this.insideBox.getY();
 
+        //Create an array list of sections, which are uniformly spaces points in the insideBox
         for (double x = (sectWidth / 2); x <= this.insideBox.getWidth(); x += sectWidth) {
             for (double y = (sectHeight / 2); y <= this.insideBox.getHeight(); y += sectHeight) {
                 this.sections.add(new Point2D.Double(x + boxX, y + boxY));
@@ -55,24 +61,29 @@ public class Emma extends AdvancedRobot {
         this.setAdjustRadarForGunTurn(true);
         this.setAdjustRadarForRobotTurn(true);
 
+        //Start thread to calculate best escape location
         this.bestSectionThread = new EmmaThread();
         this.bestSectionThread.start();
 
         boolean justStarted = true;
 
         while (true) {
+            //Escape immediately
             if (justStarted) {
                 justStarted = false;
                 this.turnRadarRight(360);
                 this.escape();
             }
 
+            //Lock on to the nearest enemy if we do not have a target
             if (!this.isLockedOn()) {
                 this.lockOnToNearest();
             }
 
+            //Scan 360 degrees to keep map updated
             this.setTurnRadarRight(360);
 
+            //Execute all set* commands this turn
             this.execute();
         }
     }
