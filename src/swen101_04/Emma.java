@@ -1,4 +1,4 @@
-package swen101_04;
+package SWEN101_04;
 
 import robocode.*;
 import robocode.util.Utils;
