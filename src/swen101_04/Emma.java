@@ -37,7 +37,7 @@ public class Emma extends AdvancedRobot {
 
     @Override
     public void run() {
-        this.setColors(Color.black, Color.blue, Color.yellow);
+        this.setColors(Color.ORANGE, Color.black, Color.MAGENTA);
 
         this.sections = new ArrayList<Point2D.Double>();
 
@@ -209,6 +209,12 @@ public class Emma extends AdvancedRobot {
 
     @Override
     public void onWin(WinEvent event) {
+        this.ahead(25);
+        this.ahead(-25);
+        this.ahead(25);
+        this.ahead(-25);
+        this.ahead(25);
+        this.ahead(-25);
         this.escapePoint.setEndThread(true);
     }
 
