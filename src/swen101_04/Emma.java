@@ -73,6 +73,7 @@ public class Emma extends AdvancedRobot {
                 justStarted = false;
                 this.turnRadarRight(360);
                 this.escape();
+                this.execute();
             }
 
             //Lock on to the nearest enemy if we do not have a target
@@ -96,7 +97,7 @@ public class Emma extends AdvancedRobot {
                 return false;
             }
         } else {
-            if (this.amountHit >= 3) {
+            if (this.amountHit >= 2) {
                 return true;
             } else {
                 return false;
@@ -150,7 +151,6 @@ public class Emma extends AdvancedRobot {
             setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
 
             this.setFire(bulletPower);
-            this.setFire(bulletPower);
 
             if (!this.shouldMove()) {
                 this.facePoint(botPoint, EmmaPart.RADAR);
@@ -186,7 +186,7 @@ public class Emma extends AdvancedRobot {
     @Override
     public void onBulletMissed(BulletMissedEvent event) {
         this.missedBullets++;
-        if (this.missedBullets > 2) {
+        if (this.missedBullets > 3) {
             this.missedBullets = 0;
             this.lockOffEnemy();
             this.lockOnToNearest();
