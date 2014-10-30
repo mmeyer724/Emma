@@ -37,7 +37,7 @@ public class Emma extends AdvancedRobot {
 
     @Override
     public void run() {
-        this.setColors(Color.ORANGE, Color.black, Color.MAGENTA);
+        this.setColors(Color.GRAY, Color.PINK, Color.YELLOW);
 
         this.sections = new ArrayList<Point2D.Double>();
 
